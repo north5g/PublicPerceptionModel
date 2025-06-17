@@ -1,72 +1,112 @@
-from data_prep.py import prepare_dataset
-from unsloth import FastVisionModel
-from transformers import AutoImageProcessor
 import torch
-from dataset import PlacePulseDataset
+import random
+import numpy as np
+from unsloth import FastVisionModel
+from transformers import AutoImageProcessor, TrainingArguments, Trainer
+from data_prep import prepare_placepulse_dataset, labels
 from torchvision import transforms
-from transformers import TrainingArguments, Trainer
 
-# Example: Compose transforms if needed
+# 1. Set random seed for reproducibility
+def set_seed(seed=3407):
+    torch.manual_seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+set_seed(3407)
+
+# 2. Define transforms (with normalization)
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    # ...add normalization if needed...
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
-converted_dataset = prepare_dataset(your_raw_data)  # TODO: Replace with actual raw data loading
-train_dataset = PlacePulseDataset(converted_dataset, transform=transform)
-
-
-# Replace with HuggingFace model name. Majority of file same.
+# 3. Load model and tokenizer
 model_name = "geolocal/StreetCLIP"
-
-# Load the tokenizer
 model, tokenizer = FastVisionModel.from_pretrained(
-    model_name = model_name,
-    load_in_4bit = True,  # Reduces memory usage. False for 16bit LoRA.
-    use_gradient_checkpointing = True,  # True or "unsloth" for gradient checkpointing
-    device_map = "auto" # check if necessary
+    model_name=model_name,
+    load_in_4bit=True,
+    use_gradient_checkpointing=True,
+    device_map="auto"
 )
-
 image_processor = AutoImageProcessor.from_pretrained(model_name)
-transform = image_processor  # If using transformers' processor
+device = "cuda" if torch.cuda.is_available() else "gpu"
 
+# 4. Wrap model with LoRA/PEFT
 model = FastVisionModel.get_peft_model(
     model,
-    finetune_vision_layers     = True,
-    finetune_language_layers   = False, # Do not need language layers for vision tasks
-    finetune_attention_modules = True,
-    finetune_mlp_modules       = True,
-
-    r = 16,           # The larger, the higher the accuracy, but might overfit
-    lora_alpha = 16,  # Recommended alpha == r at least
-    lora_dropout = 0,
-    bias = "none",
-    random_state = 3407,
-    use_rslora = False,  # We support rank stabilized LoRA
-    loftq_config = None, # And LoftQ
-    # target_modules = "all-linear", # Optional now! Can specify a list if needed
+    finetune_vision_layers=True,
+    finetune_language_layers=False,
+    finetune_attention_modules=True,
+    finetune_mlp_modules=True,
+    r=16,
+    lora_alpha=16,
+    lora_dropout=0,
+    bias="none",
+    random_state=3407,
+    use_rslora=False,
+    loftq_config=None,
 )
 
+text_encoder = model.text_encoder  # or model.get_text_encoder(), depending on your model
+
+# 5. Prepare datasets
+train_json = "train.json"
+val_json = "val.json"
+train_dataset = prepare_placepulse_dataset(train_json, tokenizer, text_encoder, transform=transform, device=device)
+val_dataset = prepare_placepulse_dataset(val_json, tokenizer, text_encoder, transform=transform, device=device)
+
+# 6. Custom data collator for batching label embeddings
+def data_collator(features):
+    pixel_values = torch.stack([f["pixel_values"] for f in features])
+    labels = torch.stack([f["labels"] for f in features])
+    return {"pixel_values": pixel_values, "labels": labels}
+
+# 7. Subclass model for cosine similarity loss
+import torch.nn as nn
+import torch.nn.functional as F
+
+class PlacePulseVisionModel(nn.Module):
+    def __init__(self, base_model):
+        super().__init__()
+        self.base_model = base_model
+
+    def forward(self, pixel_values, labels=None):
+        # Get image embeddings
+        image_embeds = self.base_model.vision_model(pixel_values).last_hidden_state.mean(dim=1)
+        loss = None
+        if labels is not None:
+            loss = 1 - F.cosine_similarity(image_embeds, labels).mean()
+        return {"loss": loss, "logits": image_embeds}
+
+model = PlacePulseVisionModel(model).to(device)
+
+# 8. Training arguments
 training_args = TrainingArguments(
     output_dir="./results",
     per_device_train_batch_size=16,
     num_train_epochs=5,
     logging_steps=10,
     save_steps=100,
-    evaluation_strategy="no",  # or "steps" if you have a val set
-    remove_unused_columns=False,  # Important for vision models
+    evaluation_strategy="steps",
+    eval_steps=100,
+    remove_unused_columns=False,
+    seed=3407,
+    save_total_limit=2,
 )
+
+# 9. Trainer setup
+from placepulse_accuracy import compute_placepulse_pairwise_accuracy
 
 trainer = Trainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
-    eval_dataset=val_dataset,  # Your validation set in pairwise format
+    eval_dataset=val_dataset,
     tokenizer=None,
-    data_collator=None,
-    compute_metrics=compute_pairwise_accuracy,
+    data_collator=data_collator,
+    compute_metrics=lambda eval_pred: compute_placepulse_pairwise_accuracy(
+        eval_pred, val_dataset, labels, device
+    ),
 )
 
 trainer.train()
-
