@@ -34,9 +34,9 @@ transform_transformer = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-class PlacePulseDataset(Dataset):
+class PlacePulseDatasetWeight(Dataset):
     """
-    A PyTorch dataset class for the Place Pulse 2.0 dataset.
+    A PyTorch dataset class for the Place Pulse 2.0 dataset, returning image and weight.
 
     Args:
         dataframe (pd.DataFrame, optional): The dataframe containing the dataset information. If not provided, it will be loaded from the 'qscores_tsv_path'. Defaults to None.
@@ -63,7 +63,7 @@ class PlacePulseDataset(Dataset):
         self.dataset_folder_path = img_dir
         self.return_location_id = return_location_id
         self.transform_only_image = transform_only_image
-        self.study_types = {         # Adapted from `studies.tsv`
+        self.study_types = {
             'safe': '50a68a51fdc9f05596000002',
             'lively': '50f62c41a84ea7c5fdd2e454',
             'clean': '50f62c68a84ea7c5fdd2e456',
@@ -72,14 +72,13 @@ class PlacePulseDataset(Dataset):
             'beautiful': '5217c351ad93a7d3e7b07a64'
         }
 
-
         if qscores_tsv_path:
             dataframe = pd.read_csv(qscores_tsv_path, sep='\t')
 
         if qscores_tsv_path or isinstance(dataframe, pd.DataFrame):
             self.dataframe = dataframe
-
-            self.dataframe['trueskill.score'] = torch.FloatTensor(self.dataframe['trueskill.score'].values)
+            # Rename trueskill.score to weight for clarity
+            self.dataframe['weight'] = torch.FloatTensor(self.dataframe['trueskill.score'].values)
 
         if study_id:
             self.dataframe = self.dataframe[self.dataframe['study_id'] == study_id]
@@ -90,7 +89,6 @@ class PlacePulseDataset(Dataset):
 
         if split:
             train_df, val_df = train_test_split(self.dataframe, test_size=0.4)
-
             if split == 'train':
                 self.dataframe = train_df
             elif split == 'val':
@@ -99,19 +97,17 @@ class PlacePulseDataset(Dataset):
     def __len__(self) -> int:
         return len(self.dataframe)
 
-
     def __getitem__(self, idx):
         location_id = self.dataframe.iloc[idx]['location_id']
         img = self.get_img_by_location_id(location_id)
-        rating = self.dataframe.iloc[idx]['trueskill.score']
+        weight = self.dataframe.iloc[idx]['weight']
 
         if self.transform_only_image:
             if self.return_location_id:
-                return img, rating, location_id
-            return img, rating
-
+                return img, weight, location_id
+            return img, weight
         else:
-            return self.transform((img, rating))
+            return self.transform((img, weight))
 
     def get_img_by_location_id(self, location_id):
         extension = '.jpg'
@@ -126,12 +122,12 @@ class PlacePulseDataset(Dataset):
     def get_sample_by_location_id(self, location_id):
         img = self.get_img_by_location_id(location_id)
         row = self.dataframe[self.dataframe['location_id'] == location_id]
-        rating = row['trueskill.score'].values[0]
+        weight = row['weight'].values[0]
 
         if self.return_location_id:
-            return img, rating, location_id
+            return img, weight, location_id
 
-        return img, rating
+        return img, weight
 
     @staticmethod
     def get_q_score_only_for_files_in_folder(q_scores: pd.DataFrame, folder_path):
@@ -155,7 +151,7 @@ class PlacePulseDataset(Dataset):
     def clean_qscores():
         qscores_tsv_path = 'place-pulse-2.0/qscores.tsv'
         qscores_df = pd.read_csv(qscores_tsv_path, sep='\t')
-        qscores_clean = PlacePulseDataset.get_q_score_only_for_files_in_folder(qscores_df, 'place-pulse-2.0/images/')
+        qscores_clean = PlacePulseDatasetWeight.get_q_score_only_for_files_in_folder(qscores_df, 'place-pulse-2.0/images/')
         qscores_clean.to_csv(qscores_tsv_path, sep='\t', index=False)
 
     @staticmethod
@@ -177,7 +173,7 @@ class PlacePulseDataset(Dataset):
             print("ERROR, something went wrong")
 
     @staticmethod
-    def extract_archive(zip_file_path='place-pulse-2.0.zip', destination_folder='data') -> None:
+    def extract_archive(zip_file_path='place-pulse-2.0.zip', destination_folder='place-pulse-2.0') -> None:
         """
         Extracts the specified zip file to the destination folder.
 
@@ -225,7 +221,7 @@ class PlacePulseDataset(Dataset):
         os.rename(destination_dir, source_dir)
 
         print('Removing samples where image is missing.')
-        PlacePulseDataset.clean_qscores()
+        PlacePulseDatasetWeight.clean_qscores()
 
     @staticmethod
     def load() -> None:
@@ -236,12 +232,12 @@ class PlacePulseDataset(Dataset):
             print('Error: The "place-pulse-2.0" folder already exists.')
             return
 
-        PlacePulseDataset.download_archive()
+        PlacePulseDatasetWeight.download_archive()
         zip_file_path='place-pulse-2.0.zip'
-        PlacePulseDataset.extract_archive(zip_file_path=zip_file_path)
+        PlacePulseDatasetWeight.extract_archive(zip_file_path=zip_file_path)
         print('Deleting archive.')
         os.remove(zip_file_path)
-        PlacePulseDataset.preprocess()
+        PlacePulseDatasetWeight.preprocess()
 
 def split_dataset_to_train_test(dataframe=None, qscores_tsv_path='place-pulse-2.0/qscores.tsv',
                                 train_size=1000, random_state=42, output_dir='place-pulse-2.0/'):
@@ -255,7 +251,7 @@ def split_dataset_to_train_test(dataframe=None, qscores_tsv_path='place-pulse-2.
                 Defaults to 'data/qscores.tsv'.
             train_size (int, optional): Number of samples in the training set. Defaults to 1000.
             random_state (int, optional): Random seed for reproducibility. Defaults to 42.
-            output_dir (str, optional): Directory to save the output files. Defaults to 'data/'.
+            output_dir (str, optional): Directory to save the output files. Defaults to 'place-pulse-2.0/'.
 
         Returns:
             tuple: (train_df, test_df) DataFrames for training and test sets.
@@ -342,7 +338,7 @@ def stratified_train_test_split(dataset, output_dir='place-pulse-2.0/splits', tr
 if __name__ == "__main__":
     try:
         # Initialize dataset - adjust paths as needed
-        dataset = PlacePulseDataset(
+        dataset = PlacePulseDatasetWeight(
             qscores_tsv_path='place-pulse-2.0/qscores.tsv',
             img_dir='place-pulse-2.0/images/',
             study_type='beautiful'
@@ -359,116 +355,116 @@ if __name__ == "__main__":
         print("3. Ensure all required columns are present in qscores.tsv")
         print("4. Make sure PlacePulseDataset.py is in your Python path")
 
-import pandas as pd
-from sklearn.model_selection import train_test_split
-import numpy as np
+# import pandas as pd
+# from sklearn.model_selection import train_test_split
+# import numpy as np
 
-def prepare_placepulse_data(input_path):
-    """Load and prepare the PlacePulse dataset"""
-    df = pd.read_csv(input_path)
+# def prepare_placepulse_data(input_path):
+#     """Load and prepare the PlacePulse dataset"""
+#     df = pd.read_csv(input_path)
 
-    # Create balanced 'choice' column (left/right/equal)
-    df['choice'] = np.where(df['left'] < df['right'], 'left',
-                           np.where(df['left'] > df['right'], 'right', 'equal'))
+#     # Create balanced 'choice' column (left/right/equal)
+#     df['choice'] = np.where(df['left'] < df['right'], 'left',
+#                            np.where(df['left'] > df['right'], 'right', 'equal'))
 
-    # Create category column based on left/right/equal
-    df['category'] = df['choice']
+#     # Create category column based on left/right/equal
+#     df['category'] = df['choice']
 
-    return df
+#     return df
 
-def balanced_stratified_sample(df, test_size=0.8, random_state=42):
-    """Perform stratified sampling with perfectly balanced left/right choices"""
-    # Separate equal choices first (these will be split proportionally)
-    df_equal = df[df['choice'] == 'equal']
-    df_unequal = df[df['choice'] != 'equal']
+# def balanced_stratified_sample(df, test_size=0.8, random_state=42):
+#     """Perform stratified sampling with perfectly balanced left/right choices"""
+#     # Separate equal choices first (these will be split proportionally)
+#     df_equal = df[df['choice'] == 'equal']
+#     df_unequal = df[df['choice'] != 'equal']
 
-    # Split equal choices (20% train, 80% test)
-    equal_train, equal_test = train_test_split(
-        df_equal,
-        test_size=test_size,
-        random_state=random_state
-    )
+#     # Split equal choices (20% train, 80% test)
+#     equal_train, equal_test = train_test_split(
+#         df_equal,
+#         test_size=test_size,
+#         random_state=random_state
+#     )
 
-    # For unequal choices, we need perfect balance between left/right
-    df_left = df_unequal[df_unequal['choice'] == 'left']
-    df_right = df_unequal[df_unequal['choice'] == 'right']
+#     # For unequal choices, we need perfect balance between left/right
+#     df_left = df_unequal[df_unequal['choice'] == 'left']
+#     df_right = df_unequal[df_unequal['choice'] == 'right']
 
-    # Determine the minimum number of samples between left and right
-    min_samples = min(len(df_left), len(df_right))
+#     # Determine the minimum number of samples between left and right
+#     min_samples = min(len(df_left), len(df_right))
 
-    # Take equal numbers from left and right for perfect balance
-    df_left = df_left.sample(min_samples, random_state=random_state)
-    df_right = df_right.sample(min_samples, random_state=random_state)
+#     # Take equal numbers from left and right for perfect balance
+#     df_left = df_left.sample(min_samples, random_state=random_state)
+#     df_right = df_right.sample(min_samples, random_state=random_state)
 
-    # Now split these balanced samples into train/test
-    left_train, left_test = train_test_split(
-        df_left,
-        test_size=test_size,
-        random_state=random_state,
-        stratify=df_left['choice']  # Though redundant here since all are 'left'
-    )
+#     # Now split these balanced samples into train/test
+#     left_train, left_test = train_test_split(
+#         df_left,
+#         test_size=test_size,
+#         random_state=random_state,
+#         stratify=df_left['choice']  # Though redundant here since all are 'left'
+#     )
 
-    right_train, right_test = train_test_split(
-        df_right,
-        test_size=test_size,
-        random_state=random_state,
-        stratify=df_right['choice']  # Though redundant here since all are 'right'
-    )
+#     right_train, right_test = train_test_split(
+#         df_right,
+#         test_size=test_size,
+#         random_state=random_state,
+#         stratify=df_right['choice']  # Though redundant here since all are 'right'
+#     )
 
-    # Combine all samples
-    train_df = pd.concat([equal_train, left_train, right_train])
-    test_df = pd.concat([equal_test, left_test, right_test])
+#     # Combine all samples
+#     train_df = pd.concat([equal_train, left_train, right_train])
+#     test_df = pd.concat([equal_test, left_test, right_test])
 
-    # Add set identifier
-    train_df['set'] = 'train'
-    test_df['set'] = 'test'
+#     # Add set identifier
+#     train_df['set'] = 'train'
+#     test_df['set'] = 'test'
 
-    # Reset index to get row numbers
-    train_df = train_df.reset_index(drop=True).reset_index().rename(columns={'index': 'row_number'})
-    test_df = test_df.reset_index(drop=True).reset_index().rename(columns={'index': 'row_number'})
+#     # Reset index to get row numbers
+#     train_df = train_df.reset_index(drop=True).reset_index().rename(columns={'index': 'row_number'})
+#     test_df = test_df.reset_index(drop=True).reset_index().rename(columns={'index': 'row_number'})
 
-    return train_df, test_df
+#     return train_df, test_df
 
-def save_datasets(train_df, test_df, output_dir='output'):
-    """Save the train and test datasets"""
-    import os
-    os.makedirs(output_dir, exist_ok=True)
+# def save_datasets(train_df, test_df, output_dir='output'):
+#     """Save the train and test datasets"""
+#     import os
+#     os.makedirs(output_dir, exist_ok=True)
 
-    train_path = f"{output_dir}/safety_train_df.csv"
-    test_path = f"{output_dir}/safety_test_df.csv"
+#     train_path = f"{output_dir}/safety_train_df.csv"
+#     test_path = f"{output_dir}/safety_test_df.csv"
 
-    # Select and order the required columns
-    output_cols = ['row_number', 'choice', 'left', 'right', 'set', 'category']
-    train_df = train_df[output_cols + [c for c in train_df.columns if c not in output_cols]]
-    test_df = test_df[output_cols + [c for c in test_df.columns if c not in output_cols]]
+#     # Select and order the required columns
+#     output_cols = ['row_number', 'choice', 'left', 'right', 'set', 'category']
+#     train_df = train_df[output_cols + [c for c in train_df.columns if c not in output_cols]]
+#     test_df = test_df[output_cols + [c for c in test_df.columns if c not in output_cols]]
 
-    train_df.to_csv(train_path, index=False)
-    test_df.to_csv(test_path, index=False)
+#     train_df.to_csv(train_path, index=False)
+#     test_df.to_csv(test_path, index=False)
 
-    print(f"Saved training data to {train_path} ({len(train_df)} samples)")
-    print(f"Saved test data to {test_path} ({len(test_df)} samples)")
+#     print(f"Saved training data to {train_path} ({len(train_df)} samples)")
+#     print(f"Saved test data to {test_path} ({len(test_df)} samples)")
 
-    return train_path, test_path
+#     return train_path, test_path
 
-# Example usage
-if __name__ == "__main__":
-    # Load your dataset (adjust path)
-    input_path = "safety_train_df.csv"  # Or your actual file path
-    df = prepare_placepulse_data(input_path)
+# # Example usage
+# if __name__ == "__main__":
+#     # Load your dataset (adjust path)
+#     input_path = "safety_train_df.csv"  # Or your actual file path
+#     df = prepare_placepulse_data(input_path)
 
-    # Perform stratified sampling with perfect left/right balance
-    train_df, test_df = balanced_stratified_sample(df)
+#     # Perform stratified sampling with perfect left/right balance
+#     train_df, test_df = balanced_stratified_sample(df)
 
-    # Save results
-    save_datasets(train_df, test_df)
+#     # Save results
+#     save_datasets(train_df, test_df)
 
-    # Print class distributions
-    print("\nTraining set distribution:")
-    print(train_df['choice'].value_counts())
-    print("\nTest set distribution:")
-    print(test_df['choice'].value_counts())
+#     # Print class distributions
+#     print("\nTraining set distribution:")
+#     print(train_df['choice'].value_counts())
+#     print("\nTest set distribution:")
+#     print(test_df['choice'].value_counts())
 
-    # Verify balance
-    print("\nBalance verification:")
-    print("Train - Left vs Right:", sum(train_df['choice'] == 'left'), "vs", sum(train_df['choice'] == 'right'))
-    print("Test - Left vs Right:", sum(test_df['choice'] == 'left'), "vs", sum(test_df['choice'] == 'right'))
+#     # Verify balance
+#     print("\nBalance verification:")
+#     print("Train - Left vs Right:", sum(train_df['choice'] == 'left'), "vs", sum(train_df['choice'] == 'right'))
+#     print("Test - Left vs Right:", sum(test_df['choice'] == 'left'), "vs", sum(test_df['choice'] == 'right'))

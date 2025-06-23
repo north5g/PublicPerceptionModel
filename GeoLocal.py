@@ -3,7 +3,7 @@ import random
 import numpy as np
 from unsloth import FastVisionModel
 from transformers import AutoImageProcessor, TrainingArguments, Trainer
-from data_prep import prepare_placepulse_dataset, labels
+from data_prep_text import PlacePulseDatasetText, labels  # <-- Use the text dataset
 from torchvision import transforms
 
 # 1. Set random seed for reproducibility
@@ -29,7 +29,7 @@ model, tokenizer = FastVisionModel.from_pretrained(
     device_map="auto"
 )
 image_processor = AutoImageProcessor.from_pretrained(model_name)
-device = "cuda" if torch.cuda.is_available() else "gpu"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # 4. Wrap model with LoRA/PEFT
 model = FastVisionModel.get_peft_model(
@@ -49,11 +49,25 @@ model = FastVisionModel.get_peft_model(
 
 text_encoder = model.text_encoder  # or model.get_text_encoder(), depending on your model
 
-# 5. Prepare datasets
-train_json = "train.json"
-val_json = "val.json"
-train_dataset = prepare_placepulse_dataset(train_json, tokenizer, text_encoder, transform=transform, device=device)
-val_dataset = prepare_placepulse_dataset(val_json, tokenizer, text_encoder, transform=transform, device=device)
+# 5. Prepare datasets using PlacePulseDatasetText
+train_votes = "train_votes.tsv"
+val_votes = "val_votes.tsv"
+train_dataset = PlacePulseDatasetText(
+    votes_tsv_path=train_votes,
+    transform=transform,
+    tokenizer=tokenizer,
+    text_encoder=text_encoder,
+    device=device,
+    split=None,  # or 'train' if you want to split inside the class
+)
+val_dataset = PlacePulseDatasetText(
+    votes_tsv_path=val_votes,
+    transform=transform,
+    tokenizer=tokenizer,
+    text_encoder=text_encoder,
+    device=device,
+    split=None,  # or 'val'
+)
 
 # 6. Custom data collator for batching label embeddings
 def data_collator(features):
