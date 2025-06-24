@@ -43,8 +43,9 @@ class PlacePulseDatasetWeight(Dataset):
         qscores_tsv_path (str, optional): The path to the tsv file containing the dataset information. Defaults to 'place-pulse-2.0/qscores.tsv'.
         transform (callable, optional): A function/transform that takes in an image and returns a transformed version. Defaults to None.
         img_dir (str, optional): The directory path where the dataset images are stored. Defaults to 'place-pulse-2.0/images/'.
-        return_location_id (bool, optional): Whether to return the location ID along with the image and rating. Defaults to False.
+        return_location_id (bool, optional): Whether to return the location ID along with the image and weight. Defaults to False.
         study_id (int, optional): The ID of the study to filter the dataset. Defaults to None.
+        study_type (str, optional): The type of the study to filter the dataset. Defaults to None.
         transform_only_image (bool, optional): Whether to apply the transformation only to the image. Defaults to True.
         split (str, optional): The split of the dataset to use. Can be 'train' or 'val'. Defaults to None.
     """
@@ -53,11 +54,8 @@ class PlacePulseDatasetWeight(Dataset):
                  return_location_id=False, study_id=None, study_type=None,
                  transform_only_image=True, split=None):
 
-        if not study_id and not study_type:
-            raise ValueError("Please provide either 'study_id' or 'study_type'.")
-
-        if qscores_tsv_path and isinstance(dataframe, pd.DataFrame):
-            raise ValueError("Please provide either 'qscores_path' or 'dataframe', but not both. These parameters are mutually exclusive.")
+        if qscores_tsv_path and dataframe is not None:
+            raise ValueError("Please provide either 'qscores_tsv_path' or 'dataframe', not both.")
 
         self.transform = transform
         self.dataset_folder_path = img_dir
@@ -71,24 +69,32 @@ class PlacePulseDatasetWeight(Dataset):
             'depressing': '50f62ccfa84ea7c5fdd2e459',
             'beautiful': '5217c351ad93a7d3e7b07a64'
         }
+        self.study_ids_to_type = {v: k for k, v in self.study_types.items()}
 
+        # Load and process data
         if qscores_tsv_path:
             dataframe = pd.read_csv(qscores_tsv_path, sep='\t')
-
         if qscores_tsv_path or isinstance(dataframe, pd.DataFrame):
             self.dataframe = dataframe
             # Rename trueskill.score to weight for clarity
             self.dataframe['weight'] = torch.FloatTensor(self.dataframe['trueskill.score'].values)
+            # Always add study_type column if possible
+            if 'study_type' not in self.dataframe.columns and 'study_id' in self.dataframe.columns:
+                self.dataframe['study_type'] = self.dataframe['study_id'].map(self.study_ids_to_type)
+        else:
+            raise ValueError("Must provide either qscores_tsv_path or dataframe.")
 
+        # Filter by study_type if not "all"
+        if study_type and study_type != "all":
+            self.dataframe = self.dataframe[self.dataframe['study_type'] == study_type]
+
+        # Optionally filter by study_id (if provided)
         if study_id:
             self.dataframe = self.dataframe[self.dataframe['study_id'] == study_id]
 
-        if study_type:
-            study_id = self.study_types[study_type]
-            self.dataframe = self.dataframe[self.dataframe['study_id'] == study_id]
-
+        # Split if requested
         if split:
-            train_df, val_df = train_test_split(self.dataframe, test_size=0.4)
+            train_df, val_df = train_test_split(self.dataframe, test_size=0.2, random_state=42, stratify=self.dataframe['study_type'])
             if split == 'train':
                 self.dataframe = train_df
             elif split == 'val':
@@ -102,12 +108,13 @@ class PlacePulseDatasetWeight(Dataset):
         img = self.get_img_by_location_id(location_id)
         weight = self.dataframe.iloc[idx]['weight']
 
-        if self.transform_only_image:
-            if self.return_location_id:
-                return img, weight, location_id
-            return img, weight
-        else:
-            return self.transform((img, weight))
+        if self.transform:
+            img = self.transform(img)
+
+        sample = {"pixel_values": img, "weight": weight}
+        if self.return_location_id:
+            sample["location_id"] = location_id
+        return sample
 
     def get_img_by_location_id(self, location_id):
         extension = '.jpg'
@@ -120,14 +127,22 @@ class PlacePulseDatasetWeight(Dataset):
         return img
 
     def get_sample_by_location_id(self, location_id):
+        """
+        Returns a sample dictionary for a given location_id, matching the format of __getitem__.
+        """
         img = self.get_img_by_location_id(location_id)
         row = self.dataframe[self.dataframe['location_id'] == location_id]
+        if row.empty:
+            raise ValueError(f"location_id {location_id} not found in dataframe.")
         weight = row['weight'].values[0]
 
-        if self.return_location_id:
-            return img, weight, location_id
+        if self.transform:
+            img = self.transform(img)
 
-        return img, weight
+        sample = {"pixel_values": img, "weight": weight}
+        if self.return_location_id:
+            sample["location_id"] = location_id
+        return sample
 
     @staticmethod
     def get_q_score_only_for_files_in_folder(q_scores: pd.DataFrame, folder_path):
