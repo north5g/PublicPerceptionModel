@@ -21,13 +21,16 @@ transform = transforms.Compose([
 ])
 
 # 3. Load model and tokenizer
-model_name = "geolocal/StreetCLIP"
+model_name = "Salesforce/blip2-flan-t5-xl"
 model, tokenizer = FastVisionModel.from_pretrained(
     model_name=model_name,
     load_in_4bit=True,
     use_gradient_checkpointing=True,
     device_map="auto"
 )
+# For BLIP-2, use the language model as text encoder
+text_encoder = model.language_model
+
 image_processor = AutoImageProcessor.from_pretrained(model_name)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -46,8 +49,6 @@ model = FastVisionModel.get_peft_model(
     use_rslora=False,
     loftq_config=None,
 )
-
-text_encoder = model.text_encoder  # or model.get_text_encoder(), depending on your model
 
 # 5. Prepare datasets using PlacePulseDatasetText
 train_votes = "train_votes.tsv"
