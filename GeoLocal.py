@@ -51,23 +51,22 @@ model = FastVisionModel.get_peft_model(
 )
 
 # 5. Prepare datasets using PlacePulseDatasetText
-train_votes = "train_votes.tsv"
-val_votes = "val_votes.tsv"
+votes_path = "votes.tsv"
 train_dataset = PlacePulseDatasetText(
-    votes_tsv_path=train_votes,
+    votes_tsv_path=votes_path,
     transform=transform,
     tokenizer=tokenizer,
     text_encoder=text_encoder,
     device=device,
-    split=None,  # or 'train' if you want to split inside the class
+    split='train',
 )
 val_dataset = PlacePulseDatasetText(
-    votes_tsv_path=val_votes,
+    votes_tsv_path=votes_path,
     transform=transform,
     tokenizer=tokenizer,
     text_encoder=text_encoder,
     device=device,
-    split=None,  # or 'val'
+    split='val',
 )
 
 # 6. Custom data collator for batching label embeddings

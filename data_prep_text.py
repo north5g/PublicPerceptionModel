@@ -97,7 +97,7 @@ class PlacePulseDatasetText(Dataset):
 
         # Split if requested
         if split:
-            train_df, val_df = train_test_split(self.dataframe, test_size=0.4, random_state=42, stratify=self.dataframe['study_type'])
+            train_df, val_df = train_test_split(self.dataframe, test_size=0.2, random_state=42, stratify=self.dataframe['study_type'])
             if split == 'train':
                 self.dataframe = train_df
             elif split == 'val':
@@ -144,14 +144,28 @@ class PlacePulseDatasetText(Dataset):
         return img
 
     def get_sample_by_location_id(self, location_id):
+        """
+        Returns a sample dictionary for a given location_id, matching the format of __getitem__.
+        """
         img = self.get_img_by_location_id(location_id)
         row = self.dataframe[self.dataframe['location_id'] == location_id]
-        rating = row['trueskill.score'].values[0]
+        if row.empty:
+            raise ValueError(f"location_id {location_id} not found in dataframe.")
+        label = row['label'].values[0]
 
+        if self.transform:
+            img = self.transform(img)
+
+        # Convert label string to embedding tensor if possible
+        if self.tokenizer is not None and self.text_encoder is not None:
+            label_emb = self.label_embeddings[label]
+        else:
+            label_emb = label  # fallback for debugging
+
+        sample = {"pixel_values": img, "labels": label_emb}
         if self.return_location_id:
-            return img, rating, location_id
-
-        return img, rating
+            sample["location_id"] = location_id
+        return sample
 
     @staticmethod
     def get_q_score_only_for_files_in_folder(q_scores: pd.DataFrame, folder_path):
