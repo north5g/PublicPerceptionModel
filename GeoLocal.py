@@ -21,7 +21,7 @@ transform = transforms.Compose([
 ])
 
 # 3. Load model and tokenizer
-model_name = "Salesforce/blip2-flan-t5-xl"
+model_name = "Salesforce/blip2-opt-2.7b"
 model, tokenizer = FastVisionModel.from_pretrained(
     model_name=model_name,
     load_in_4bit=True,
