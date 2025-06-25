@@ -1,0 +1,3 @@
+from data_prep_weights import PlacePulseDatasetWeight
+
+PlacePulseDatasetWeight.load()

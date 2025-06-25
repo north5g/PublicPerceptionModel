@@ -2,11 +2,13 @@ import torch
 import random
 import numpy as np
 from unsloth import FastVisionModel
-from transformers import AutoImageProcessor, TrainingArguments, Trainer
+from transformers import TrainingArguments
 from data_prep_weights import PlacePulseDatasetWeight
 from torchvision import transforms
+from trl import SFTTrainer, SFTConfig
 import torch.nn as nn
 
+PlacePulseDatasetWeight.preprocess()
 # 1. Set random seed for reproducibility
 def set_seed(seed=3407):
     torch.manual_seed(seed)
@@ -29,7 +31,7 @@ STUDY_TYPE_TO_IDX = {name: i for i, name in enumerate(STUDY_TYPES)}
 
 # 4. Load model and tokenizer
 model_name = "Salesforce/blip2-opt-2.7b"
-model, tokenizer = FastVisionModel.from_pretrained(
+base_model, tokenizer = FastVisionModel.from_pretrained(
     model_name=model_name,
     load_in_4bit=True,
     use_gradient_checkpointing=True,
@@ -38,8 +40,8 @@ model, tokenizer = FastVisionModel.from_pretrained(
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # 5. Optionally wrap model with LoRA/PEFT
-model = FastVisionModel.get_peft_model(
-    model,
+base_model = FastVisionModel.get_peft_model(
+    base_model,
     finetune_vision_layers=True,
     finetune_language_layers=False,
     finetune_attention_modules=True,
@@ -73,17 +75,17 @@ class MultiTaskPlacePulseDatasetWeight(PlacePulseDatasetWeight):
         return sample
 
 train_dataset = MultiTaskPlacePulseDatasetWeight(
-    qscores_tsv_path="qscores.tsv",
+    qscores_tsv_path="place-pulse-2.0/qscores.tsv",
     transform=transform,
     split='train',
 )
 val_dataset = MultiTaskPlacePulseDatasetWeight(
-    qscores_tsv_path="qscores.tsv",
+    qscores_tsv_path="place-pulse-2.0/qscores.tsv",
     transform=transform,
     split='val',
 )
 
-# 7. Multi-task regression model
+# 7. Multi-task regression model (with Unsloth compatibility)
 class MultiTaskBlip2RegressionModel(nn.Module):
     def __init__(self, base_model, num_study_types):
         super().__init__()
@@ -91,6 +93,7 @@ class MultiTaskBlip2RegressionModel(nn.Module):
         hidden_size = base_model.vision_model.config.hidden_size
         self.study_type_embed = nn.Embedding(num_study_types, hidden_size)
         self.regressor = nn.Linear(hidden_size * 2, 1)
+        self.config = base_model.config
 
     def forward(self, pixel_values, study_type_idx=None, labels=None):
         vision_outputs = self.base_model.vision_model(pixel_values)
@@ -103,7 +106,14 @@ class MultiTaskBlip2RegressionModel(nn.Module):
             loss = nn.functional.mse_loss(pred, labels.float())
         return {"loss": loss, "logits": pred}
 
-model = MultiTaskBlip2RegressionModel(model, num_study_types=len(STUDY_TYPES)).to(device)
+    def get_input_embeddings(self):
+        return self.base_model.get_input_embeddings()
+
+    def get_output_embeddings(self):
+        # For Unsloth compatibility
+        return self.regressor
+
+model = MultiTaskBlip2RegressionModel(base_model, num_study_types=len(STUDY_TYPES)).to(device)
 
 # 8. Data collator for Trainer
 def data_collator(features):
@@ -119,24 +129,24 @@ def data_collator(features):
         batch["location_id"] = [f["location_id"] for f in features]
     return batch
 
-# 9. Training arguments
-training_args = TrainingArguments(
+# 9. Training arguments (SFTConfig for Unsloth SFTTrainer)
+train_args = SFTConfig(
     output_dir="./results",
     per_device_train_batch_size=16,
     num_train_epochs=5,
     logging_steps=10,
-    save_steps=100,
-    evaluation_strategy="steps",
+    eval_strategy="steps",
     eval_steps=100,
-    remove_unused_columns=False,
+    save_steps=100,
     seed=3407,
     save_total_limit=2,
+    remove_unused_columns=False,
 )
 
 # 10. Trainer setup
-trainer = Trainer(
+trainer = SFTTrainer(
     model=model,
-    args=training_args,
+    args=train_args,
     train_dataset=train_dataset,
     eval_dataset=val_dataset,
     data_collator=data_collator,

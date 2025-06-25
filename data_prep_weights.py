@@ -4,6 +4,8 @@ from skimage import io
 from torchvision import transforms
 import pandas as pd
 from torchvision.transforms.functional import crop
+from PIL import Image
+import numpy as np
 
 import os
 from os import listdir
@@ -50,7 +52,7 @@ class PlacePulseDatasetWeight(Dataset):
         split (str, optional): The split of the dataset to use. Can be 'train' or 'val'. Defaults to None.
     """
     def __init__(self, dataframe=None, qscores_tsv_path='place-pulse-2.0/qscores.tsv',
-                 transform=None, img_dir='place-pulse-2.0/images/',
+                 transform=None, img_dir='place-pulse-2.0/images_preprocessed/',
                  return_location_id=False, study_id=None, study_type=None,
                  transform_only_image=True, split=None):
 
@@ -120,10 +122,13 @@ class PlacePulseDatasetWeight(Dataset):
         extension = '.jpg'
         img_name = f"{location_id}{extension}"
         img = io.imread(f'{self.dataset_folder_path}{img_name}')
-
+        # Convert numpy array to PIL Image if needed
+        if isinstance(img, np.ndarray):
+            if img.ndim == 2:  # grayscale to RGB
+                img = np.stack([img]*3, axis=-1)
+            img = Image.fromarray(img)
         if self.transform and self.transform_only_image:
             img = self.transform(img)
-
         return img
 
     def get_sample_by_location_id(self, location_id):
