@@ -53,7 +53,7 @@ class PlacePulseDatasetWeight(Dataset):
     """
     def __init__(self, dataframe=None, qscores_tsv_path='place-pulse-2.0/qscores.tsv',
                  transform=None, img_dir='place-pulse-2.0/images_preprocessed/',
-                 return_location_id=False, study_id=None, study_type=None,
+                 train_size=None, return_location_id=False, study_id=None, study_type=None,
                  transform_only_image=True, split=None):
 
         if qscores_tsv_path and dataframe is not None:
@@ -96,7 +96,10 @@ class PlacePulseDatasetWeight(Dataset):
 
         # Split if requested
         if split:
-            train_df, val_df = train_test_split(self.dataframe, test_size=0.2, random_state=42, stratify=self.dataframe['study_type'])
+            if train_size is None:
+                train_df, val_df = train_test_split(self.dataframe, test_size=0.2, random_state=42, stratify=self.dataframe['study_type'])
+            else:
+                train_df, val_df = train_test_split(self.dataframe, train_size=train_size, test_size=0.2, random_state=42, stratify=self.dataframe['study_type'])
             if split == 'train':
                 self.dataframe = train_df
             elif split == 'val':
@@ -107,13 +110,14 @@ class PlacePulseDatasetWeight(Dataset):
 
     def __getitem__(self, idx):
         location_id = self.dataframe.iloc[idx]['location_id']
-        img = self.get_img_by_location_id(location_id)
+        img = self.get_img_by_location_id(location_id)  # Always returns PIL.Image
         weight = self.dataframe.iloc[idx]['weight']
 
+        # Apply transform if provided (should expect PIL.Image)
         if self.transform:
             img = self.transform(img)
 
-        sample = {"pixel_values": img, "weight": weight}
+        sample = {"pixel_values": img, "labels": weight}
         if self.return_location_id:
             sample["location_id"] = location_id
         return sample
@@ -121,14 +125,16 @@ class PlacePulseDatasetWeight(Dataset):
     def get_img_by_location_id(self, location_id):
         extension = '.jpg'
         img_name = f"{location_id}{extension}"
-        img = io.imread(f'{self.dataset_folder_path}{img_name}')
-        # Convert numpy array to PIL Image if needed
+        img_path = f'{self.dataset_folder_path}{img_name}'
+        img = io.imread(img_path)
+        # Always convert to PIL.Image
         if isinstance(img, np.ndarray):
             if img.ndim == 2:  # grayscale to RGB
                 img = np.stack([img]*3, axis=-1)
             img = Image.fromarray(img)
-        if self.transform and self.transform_only_image:
-            img = self.transform(img)
+        elif not isinstance(img, Image.Image):
+            # Fallback: try to open with PIL directly
+            img = Image.open(img_path).convert("RGB")
         return img
 
     def get_sample_by_location_id(self, location_id):
@@ -171,7 +177,7 @@ class PlacePulseDatasetWeight(Dataset):
     def clean_qscores():
         qscores_tsv_path = 'place-pulse-2.0/qscores.tsv'
         qscores_df = pd.read_csv(qscores_tsv_path, sep='\t')
-        qscores_clean = PlacePulseDatasetWeight.get_q_score_only_for_files_in_folder(qscores_df, 'place-pulse-2.0/images/')
+        qscores_clean = PlacePulseDatasetWeight.get_q_score_only_for_files_in_folder(qscores_df, 'place-pulse-2.0/images_preprocessed/')
         qscores_clean.to_csv(qscores_tsv_path, sep='\t', index=False)
 
     @staticmethod
@@ -236,9 +242,9 @@ class PlacePulseDatasetWeight(Dataset):
 
             shutil.copyfile(file_path, destination_path)
 
-        print('Cleaning up.')
-        shutil.rmtree(source_dir)
-        os.rename(destination_dir, source_dir)
+        #print('Cleaning up.')
+        #shutil.rmtree(source_dir)
+        #os.rename(destination_dir, source_dir)
 
         print('Removing samples where image is missing.')
         PlacePulseDatasetWeight.clean_qscores()
@@ -257,7 +263,7 @@ class PlacePulseDatasetWeight(Dataset):
         PlacePulseDatasetWeight.extract_archive(zip_file_path=zip_file_path)
         print('Deleting archive.')
         os.remove(zip_file_path)
-        PlacePulseDatasetWeight.preprocess()
+        #PlacePulseDatasetWeight.preprocess()
 
 def split_dataset_to_train_test(dataframe=None, qscores_tsv_path='place-pulse-2.0/qscores.tsv',
                                 train_size=1000, random_state=42, output_dir='place-pulse-2.0/'):
