@@ -81,8 +81,7 @@ class PlacePulseDatasetWeight(Dataset):
             # Rename trueskill.score to weight for clarity
             self.dataframe['weight'] = torch.FloatTensor(self.dataframe['trueskill.score'].values)
             # Always add study_type column if possible
-            if 'study_type' not in self.dataframe.columns and 'study_id' in self.dataframe.columns:
-                self.dataframe['study_type'] = self.dataframe['study_id'].map(self.study_ids_to_type)
+            self.dataframe['study_type'] = self.dataframe['study_id'].map(self.study_ids_to_type)
         else:
             raise ValueError("Must provide either qscores_tsv_path or dataframe.")
 
@@ -112,12 +111,13 @@ class PlacePulseDatasetWeight(Dataset):
         location_id = self.dataframe.iloc[idx]['location_id']
         img = self.get_img_by_location_id(location_id)  # Always returns PIL.Image
         weight = self.dataframe.iloc[idx]['weight']
+        study_type = self.dataframe.iloc[idx]['study_type']
 
         # Apply transform if provided (should expect PIL.Image)
         if self.transform:
             img = self.transform(img)
 
-        sample = {"pixel_values": img, "labels": weight}
+        sample = {"pixel_values": img, "labels": weight, "text": study_type}
         if self.return_location_id:
             sample["location_id"] = location_id
         return sample
