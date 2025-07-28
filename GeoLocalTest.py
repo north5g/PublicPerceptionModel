@@ -19,27 +19,21 @@ models = {
 
 selected_model = args.model_name
 
-# actual training set
+# test training set
 training_args = TrainingArguments(
-    output_dir="./results_[{}]".format(selected_model),
-    per_device_train_batch_size=32,
-    per_device_eval_batch_size=32,
-    gradient_accumulation_steps=2,
-    learning_rate=3e-5,
-    num_train_epochs=25,
-    lr_scheduler_type="cosine",
-    warmup_ratio=0.1,
-    logging_dir="./logs_[{}]".format(selected_model),
-    logging_steps=50,
-    eval_strategy="epoch",
-    save_strategy="epoch",
-    save_total_limit=3,
-    load_best_model_at_end=True,
-    metric_for_best_model="eval_loss",
-    greater_is_better=False,
-    dataload_num_workers=2,
-    fp16=True,
-    report_to="none"
+    output_dir="/tmp/no_save",                  # Temporary directory, not used
+    overwrite_output_dir=True,                  # Avoid warnings about existing dirs
+    per_device_train_batch_size=4,
+    per_device_eval_batch_size=4,
+    learning_rate=5e-5,
+    num_train_epochs=1,
+    max_steps=10,
+    logging_dir="/tmp/no_logs",                 # Also point to a throwaway location
+    logging_steps=999999,                       # Effectively disables logging
+    evaluation_strategy="no",                   # Disable evaluation
+    save_strategy="no",                         # Disable checkpoint saving
+    load_best_model_at_end=False,               # Don't track or restore best model
+    report_to="none"                            # Disable reporting to any platform
 )
 
 from sklearn.metrics import mean_squared_error, r2_score
