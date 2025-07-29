@@ -10,13 +10,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, required=True)
 args = parser.parse_args()
 
-models = {
-    "openclip": 0,
-    "siglip": 1,
-    "streetclip": 2,
-    "qwen": 3
-}
-
 selected_model = args.model_name
 
 # actual training set

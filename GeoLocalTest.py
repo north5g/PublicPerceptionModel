@@ -10,13 +10,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, required=True)
 args = parser.parse_args()
 
-models = {
-    "openclip": 0,
-    "siglip": 1,
-    "streetclip": 2,
-    "qwen": 3
-}
-
 selected_model = args.model_name
 
 # test training set
@@ -30,7 +23,7 @@ training_args = TrainingArguments(
     max_steps=10,
     logging_dir="/tmp/no_logs",                 # Also point to a throwaway location
     logging_steps=999999,                       # Effectively disables logging
-    evaluation_strategy="no",                   # Disable evaluation
+    eval_strategy="no",                   # Disable evaluation
     save_strategy="no",                         # Disable checkpoint saving
     load_best_model_at_end=False,               # Don't track or restore best model
     report_to="none"                            # Disable reporting to any platform

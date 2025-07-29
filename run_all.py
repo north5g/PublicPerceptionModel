@@ -6,7 +6,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--version", type=str, choices=["test", "train"], required=True)
 args = parser.parse_args()
 
-models = ["openclip", "siglip", "streetclip", "qwen"]
+models = ["openclip", "siglip", "streetclip", "dinov2", "blip2"]
 
 if args.version == "test":
     print("🧪 Running test training set...\n")
@@ -27,4 +27,5 @@ for model in models:
         sys.exit(result.returncode)
     else:
         print(f"✅ Finished training for {model}\n")
-    print("All models have been processed successfully.")
+
+print("All models have been processed successfully.")
