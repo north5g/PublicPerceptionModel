@@ -19,7 +19,7 @@ training_args = TrainingArguments(
     per_device_eval_batch_size=32,
     gradient_accumulation_steps=2,
     learning_rate=3e-5,
-    num_train_epochs=25,
+    num_train_epochs=15,
     lr_scheduler_type="cosine",
     warmup_ratio=0.1,
     logging_dir="./logs_[{}]".format(selected_model),
@@ -30,7 +30,6 @@ training_args = TrainingArguments(
     load_best_model_at_end=True,
     metric_for_best_model="eval_loss",
     greater_is_better=False,
-    dataload_num_workers=2,
     fp16=True,
     report_to="none"
 )
@@ -68,6 +67,8 @@ trainer = Trainer(
     args=training_args,
     train_dataset=train_dataset,
     eval_dataset=eval_dataset,
+    compute_metrics=compute_metrics,
+    data_collator=default_data_collator
 )
 
 trainer.train()

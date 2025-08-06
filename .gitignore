@@ -3,3 +3,4 @@ place-pulse-2.0.zip
 env
 unsloth_compiled_cache
 __pycache__
+results_*

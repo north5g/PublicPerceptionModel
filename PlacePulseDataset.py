@@ -29,6 +29,13 @@ class PlacePulseDataset(Dataset):
 
         self.df['score'] = self.df['trueskill.score'].astype(float)
 
+        # Compute min/max
+        self.score_min = self.df['score'].min()
+        self.score_max = self.df['score'].max()
+
+        # Normalize to 0–100
+        self.df['normalized_score'] = ((self.df['score'] - self.score_min) / (self.score_max - self.score_min)) * 100
+
         study_types = {
             '50a68a51fdc9f05596000002': 'safe',
             '50f62c41a84ea7c5fdd2e454': 'lively',
@@ -54,11 +61,12 @@ class PlacePulseDataset(Dataset):
         image_path = os.path.join(self.image_folder, f"{row['location_id']}.jpg")
         image = Image.open(image_path).convert("RGB")
         image = self.transform(image)
-        score = float(row['score'])  # Ensure it’s a float for regression
+        #score = float(row['score'])  # Ensure it’s a float for regression
+        normalized_score = float(row['normalized_score'])  # Use normalized score for regression
 
         return {
           'pixel_values': image,
-          'labels': score,
+          'labels': normalized_score,
           'study_type_ids': int(row['study_type_id']),
         }
 
