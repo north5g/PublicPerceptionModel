@@ -3,7 +3,7 @@ from PlacePulseDataset import PlacePulseDataset
 from encoder import load_encoder
 from RegressionalTrainer import VisionTextRegressor
 from torchvision import transforms
-from transformers import Trainer
+from transformers import Trainer, EarlyStoppingCallback
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -53,17 +53,22 @@ model = VisionTextRegressor(
     image_size=image_size
 )
 dataset = PlacePulseDataset(transform = transform)
-train_dataset, eval_dataset = dataset.split()
+train_dataset, eval_dataset, test_dataset = dataset.split()
 
 from transformers import default_data_collator
-
 trainer = Trainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
     eval_dataset=eval_dataset,
     compute_metrics=compute_metrics,
-    data_collator=default_data_collator
+    data_collator=default_data_collator,
+    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]
 )
 
 trainer.train()
+
+test_results = trainer.evaluate(eval_dataset=test_dataset)
+print("Test set results:")
+for key, value in test_results.items():
+    print(f"{key}: {value:.4f}")

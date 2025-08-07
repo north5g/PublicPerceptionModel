@@ -13,7 +13,7 @@ from tqdm import tqdm
 from os.path import isfile, join
 
 class PlacePulseDataset(Dataset):
-    def __init__(self, csv_path='place-pulse-2.0/qscores.tsv', image_folder='place-pulse-2.0/images_preprocessed/', transform=None):
+    def __init__(self, csv_path='place-pulse-2.0/qscores.tsv', image_folder='place-pulse-2.0/images_preprocessed/', transform=None, study_type_filter="all"):
         """
         Args:
             csv_path (str): Path to the CSV file with 'image_path' and 'score' columns.
@@ -45,6 +45,10 @@ class PlacePulseDataset(Dataset):
             '5217c351ad93a7d3e7b07a64': 'beautiful'
         }
         self.df['study_type'] = self.df['study_id'].map(study_types)
+        if study_type_filter is not "all":
+            if isinstance(study_type_filter, str):
+                study_type_filter = [study_type_filter]
+            self.df = self.df[self.df['study_type'].isin(study_type_filter)]
 
         self.label_encoder = LabelEncoder()
         self.df['study_type_id'] = self.label_encoder.fit_transform(self.df['study_type'])
@@ -70,7 +74,7 @@ class PlacePulseDataset(Dataset):
           'study_type_ids': int(row['study_type_id']),
         }
 
-    def split(self, eval=0.2, random_state=42):
+    def split(self, eval=0.2, test=0.1, random_state=42):
         """
         Splits the dataset into training and evaluation sets.
 
@@ -82,11 +86,13 @@ class PlacePulseDataset(Dataset):
             Tuple[PlacePulseDataset, PlacePulseDataset]: train_dataset, eval_dataset
         """
         train_df, eval_df = train_test_split(self.df, test_size=eval, random_state=random_state)
+        train_df, test_df = train_test_split(train_df, test_size=test, random_state=random_state)
 
         train_dataset = PlacePulseDataset.__from_split__(train_df, self.image_folder, self.transform, self.label_encoder)
         eval_dataset = PlacePulseDataset.__from_split__(eval_df, self.image_folder, self.transform, self.label_encoder)
+        test_dataset = PlacePulseDataset.__from_split__(test_df, self.image_folder, self.transform, self.label_encoder)
 
-        return train_dataset, eval_dataset
+        return train_dataset, eval_dataset, test_dataset
 
     @classmethod
     def __from_split__(cls, df, image_folder, transform, label_encoder):
