@@ -45,7 +45,7 @@ for model in models:
         print(f"🚀 Starting training for: {model} on {dataset}")
         result = subprocess.run(["python3", "GeoLocal.py", "--model_name", model, "--dataset", dataset])
 
-        if result.returncode is not 0:
+        if result.returncode != 0:
             print(f"❌ Training failed for {model} on {dataset}. Exiting early.")
             sys.exit(result.returncode)
         else:
