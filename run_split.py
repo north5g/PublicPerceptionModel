@@ -20,7 +20,7 @@ args = parser.parse_args()
 
 # Allowed values
 allowed_models = ["openclip", "siglip", "streetclip", "dinov2", "blip2"]
-allowed_datasets = ["safe", "lively", "clean", "wealthy", "depressing", "beautiful"]
+allowed_datasets = ["safe", "lively", "clean", "wealthy", "depressing", "beautiful", "all"]
 
 # Parse model list
 if args.models.lower() == "all":
