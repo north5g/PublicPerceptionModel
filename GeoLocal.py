@@ -57,6 +57,8 @@ transform = transforms.Compose([
 model = VisionTextRegressor(
     encoder=encoder,
     num_study_types=6,
+    study_embed_dim=128,
+    encoder_dim = encoder_dim, 
     image_size=image_size
 )
 dataset = PlacePulseDataset(transform = transform)

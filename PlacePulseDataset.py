@@ -29,13 +29,6 @@ class PlacePulseDataset(Dataset):
 
         self.df['score'] = self.df['trueskill.score'].astype(float)
 
-        # Compute min/max
-        self.score_min = self.df['score'].min()
-        self.score_max = self.df['score'].max()
-
-        # Normalize to 0–100
-        self.df['normalized_score'] = ((self.df['score'] - self.score_min) / (self.score_max - self.score_min)) * 100
-
         study_types = {
             '50a68a51fdc9f05596000002': 'safe',
             '50f62c41a84ea7c5fdd2e454': 'lively',
@@ -45,10 +38,16 @@ class PlacePulseDataset(Dataset):
             '5217c351ad93a7d3e7b07a64': 'beautiful'
         }
         self.df['study_type'] = self.df['study_id'].map(study_types)
-        if study_type_filter is not "all":
+        if study_type_filter != "all":
             if isinstance(study_type_filter, str):
                 study_type_filter = [study_type_filter]
             self.df = self.df[self.df['study_type'].isin(study_type_filter)]
+
+            self.df['normalized_score'] = self.df.groupby('study_type')['score'].transform(
+                lambda x: (x - x.min()) / (x.max() - x.min()) * 100
+            )
+        else:
+            self.df['normalized_score'] = ((self.df['score'] - self.df['score'].min()) / (self.df['score'].max() - self.df['score'].min())) * 100
 
         self.label_encoder = LabelEncoder()
         self.df['study_type_id'] = self.label_encoder.fit_transform(self.df['study_type'])
