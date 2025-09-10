@@ -17,7 +17,7 @@ def create_optimizer(model, training_args, train_dataset):
         lr_scheduler: The learning rate scheduler.
     """
     # --- 0) tune these hyperparams (recommendations) ---
-    HEAD_LR = 3e-4            # start here for head; try 1e-3 if stable
+    HEAD_LR = 1e-4            # start here for head; try 1e-3 if stable
     ENCODER_LR = 5e-6         # if you unfreeze encoder blocks; otherwise not used
     WEIGHT_DECAY = 0.01
     HEAD_WEIGHT_DECAY = 0.0   # often better to not WD the head heavily

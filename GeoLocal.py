@@ -20,8 +20,8 @@ selected_dataset = args.dataset
 # actual training set
 training_args = TrainingArguments(
     output_dir="./{}/results_[{}]".format(selected_model, selected_dataset),
-    per_device_train_batch_size=16,
-    per_device_eval_batch_size=16,
+    per_device_train_batch_size=32,
+    per_device_eval_batch_size=32,
     gradient_accumulation_steps=2,
     learning_rate=3e-5,
     num_train_epochs=15,
@@ -36,7 +36,8 @@ training_args = TrainingArguments(
     metric_for_best_model="eval_loss",
     greater_is_better=False,
     fp16=True,
-    report_to="none"
+    report_to="none",
+    max_grad_norm=1.0
 )
 
 from sklearn.metrics import mean_squared_error, r2_score
