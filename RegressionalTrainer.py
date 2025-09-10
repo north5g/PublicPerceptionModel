@@ -6,7 +6,7 @@ import torch
 class VisionTextRegressor(nn.Module):
     def __init__(self, encoder, num_study_types, study_embed_dim=128,
              encoder_dim=None, processor=None, image_size=None,
-             pool="pooler", freeze=True):
+             pool="pooler", freeze=False):
         super().__init__()
         self.encoder = encoder
         self.processor = processor
@@ -16,6 +16,11 @@ class VisionTextRegressor(nn.Module):
             for p in self.encoder.parameters():
                 p.requires_grad = False
             self.encoder.eval()
+        else:
+            # optionally only unfreeze last N blocks
+            for name, p in self.encoder.named_parameters():
+                if "encoder.layer.11" in name or "encoder.layer.10" in name:
+                    p.requires_grad = True
 
         # Infer encoder_dim if not given
         if encoder_dim is None:
@@ -53,8 +58,10 @@ class VisionTextRegressor(nn.Module):
 
         # Regressor
         self.regressor  = nn.Sequential(
-            nn.Linear(512+128, 512), nn.ReLU(), nn.Dropout(0.1),
-            nn.Linear(512, 128), nn.ReLU(), nn.Dropout(0.1),
+            nn.Linear(512+128, 1024), nn.ReLU(), nn.Dropout(0.1),
+            nn.Linear(1024, 512), nn.ReLU(),
+            nn.Linear(512, 256), nn.ReLU(), nn.Dropout(0.05),
+            nn.Linear(256, 128), nn.ReLU(),
             nn.Linear(128, 1)
         )
 
@@ -68,7 +75,7 @@ class VisionTextRegressor(nn.Module):
 
         study = self.study_embedding(study_type_ids)
         # FiLM conditioning
-        gamma, beta = self.film_gamma(study), self.film_beta(study)
+        gamma, beta = torch.tanh(self.film_gamma(study)), self.film_beta(study)
         img = img * (1 + gamma) + beta
 
         x = torch.cat([self.img_proj(img), self.study_proj(study)], dim=1)
@@ -76,5 +83,6 @@ class VisionTextRegressor(nn.Module):
 
         loss = None
         if labels is not None:
-            loss = nn.SmoothL1Loss()(logits, labels)  # try Huber; swap for MSE to compare
+            loss_fn = nn.MSELoss()
+            loss = loss_fn(logits, labels)
         return {"loss": loss, "logits": logits}

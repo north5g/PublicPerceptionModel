@@ -101,6 +101,9 @@ def load_encoder(name: str):
         model_id = "Salesforce/blip2-opt-2.7b"
         encoder = Blip2Model.from_pretrained(model_id).vision_model
         processor = AutoProcessor.from_pretrained(model_id)
+
+    elif name == "intern":
+        model_id = "InternVL3_5-241B-A28B"
         
     # elif name == "fuyu":
     #     model_id = "adept/fuyu-8b"

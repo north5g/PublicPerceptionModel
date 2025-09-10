@@ -5,6 +5,9 @@ from RegressionalTrainer import VisionTextRegressor
 from torchvision import transforms
 from transformers import Trainer, EarlyStoppingCallback
 import argparse
+from datasets import load_dataset
+from optimizer import create_optimizer
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, required=True)
@@ -21,7 +24,7 @@ training_args = TrainingArguments(
     per_device_eval_batch_size=16,
     gradient_accumulation_steps=2,
     learning_rate=3e-5,
-    num_train_epochs=10,
+    num_train_epochs=15,
     lr_scheduler_type="cosine",
     warmup_ratio=0.1,
     logging_dir="./{}/logs_[{}]".format(selected_model, selected_dataset),
@@ -66,6 +69,8 @@ train_dataset, eval_dataset, test_dataset = dataset.split()
 
 from transformers import default_data_collator
 
+optimizer, lr_scheduler = create_optimizer(model, training_args, train_dataset)
+
 trainer = Trainer(
     model=model,
     args=training_args,
@@ -73,6 +78,7 @@ trainer = Trainer(
     eval_dataset=eval_dataset,
     compute_metrics=compute_metrics,
     data_collator=default_data_collator,
+    optimizers=(optimizer, lr_scheduler),
     callbacks=[EarlyStoppingCallback(early_stopping_patience=2)]
 )
 
