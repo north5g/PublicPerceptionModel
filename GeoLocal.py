@@ -63,19 +63,21 @@ model = VisionTextRegressor(
     num_study_types=6,
     study_embed_dim=128,
     encoder_dim = encoder_dim, 
-    image_size=image_size
+    image_size=image_size,
+    freeze=True
 )
 dataset = PlacePulseDataset(transform = transform)
 train_dataset, eval_dataset, test_dataset = dataset.split()
+train_half_dataset, _, _ = train_dataset.split(eval=0.5, test=None)
 
 from transformers import default_data_collator
 
-optimizer, lr_scheduler = create_optimizer(model, training_args, train_dataset)
+optimizer, lr_scheduler = create_optimizer(model, training_args, train_half_dataset)
 
 trainer = Trainer(
     model=model,
     args=training_args,
-    train_dataset=train_dataset,
+    train_dataset=train_half_dataset,
     eval_dataset=eval_dataset,
     compute_metrics=compute_metrics,
     data_collator=default_data_collator,

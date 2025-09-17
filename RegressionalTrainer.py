@@ -48,6 +48,21 @@ class VisionTextRegressor(nn.Module):
         self.film_gamma = nn.Linear(study_embed_dim, encoder_dim)
         self.film_beta  = nn.Linear(study_embed_dim, encoder_dim)
 
+        # Make FiLM initially do almost nothing (gamma -> 0 so 1+gamma ~ 1)
+        nn.init.zeros_(self.film_gamma.weight)
+        nn.init.zeros_(self.film_gamma.bias)
+        # keep beta tiny initially
+        nn.init.zeros_(self.film_beta.weight)
+        nn.init.zeros_(self.film_beta.bias)
+
+        # Initialize regressor & proj weights with small scale to avoid large initial outputs
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                # small gain so initial outputs are small
+                nn.init.xavier_uniform_(m.weight, gain=0.01)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
         # Projections
         self.img_proj   = nn.Sequential(
             nn.LayerNorm(encoder_dim), nn.Linear(encoder_dim, 512), nn.ReLU()
@@ -75,7 +90,7 @@ class VisionTextRegressor(nn.Module):
 
         study = self.study_embedding(study_type_ids)
         # FiLM conditioning
-        gamma, beta = torch.tanh(self.film_gamma(study)), self.film_beta(study)
+        gamma, beta = 0.1 * torch.tanh(self.film_gamma(study)), self.film_beta(study)
         img = img * (1 + gamma) + beta
 
         x = torch.cat([self.img_proj(img), self.study_proj(study)], dim=1)
