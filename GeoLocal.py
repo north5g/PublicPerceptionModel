@@ -15,6 +15,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, required=True)
 parser.add_argument("--dataset", type=str, default="all", choices=["all", "safe", "lively", "clean", "wealthy", "depressing", "beautiful"])
 args = parser.parse_args()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 selected_model = args.model_name
 selected_dataset = args.dataset
@@ -66,9 +67,7 @@ def compute_metrics(eval_preds):
         "eval_huber": huber
     }
 
-# 1. Load encoder
-# top of your script:
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # pass device into load_encoder so it tries to load directly onto GPU
 encoder, processor, encoder_dim, image_size = load_encoder(selected_model, device=device, use_device_map=False)
 
