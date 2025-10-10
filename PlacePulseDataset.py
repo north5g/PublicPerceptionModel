@@ -13,7 +13,7 @@ from tqdm import tqdm
 from os.path import isfile, join
 
 class PlacePulseDataset(Dataset):
-    def __init__(self, csv_path='place-pulse-2.0/qscores.tsv', image_folder='place-pulse-2.0/images_preprocessed/', transform=None, study_type_filter="all"):
+    def __init__(self, csv_path='place-pulse-2.0/qscores.tsv', image_folder='place-pulse-2.0/images_preprocessed/', transform=None, study_type_filter="all", fraction: float = 1.0, random_state: int = 42):
         """
         Args:
             csv_path (str): Path to the CSV file with 'image_path' and 'score' columns.
@@ -21,6 +21,8 @@ class PlacePulseDataset(Dataset):
             transform (callable, optional): Optional transform to be applied on a sample.
         """
         self.df = pd.read_csv(csv_path, sep='\t')
+        if fraction < 1.0:
+            self.df = self.df.sample(frac=fraction, random_state=random_state).reset_index(drop=True)
         self.image_folder = image_folder
         self.transform = transform or transforms.Compose([
             transforms.Resize((336, 336)),
