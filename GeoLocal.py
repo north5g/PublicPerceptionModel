@@ -11,17 +11,23 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, required=True)
 parser.add_argument("--dataset", type=str, default="all", choices=["all", "safe", "lively", "clean", "wealthy", "depressing", "beautiful"])
-parser.add_argument("--transform", type=str, default="none", choices=["none", "zoomed", "greyscale", "contrast"])
+parser.add_argument("--transform", type=str, default="none", choices=["none", "zoomed", "greyscale", "contrast", "lowresolution"])
 args = parser.parse_args()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 selected_model = args.model_name
 selected_dataset = args.dataset
+transform_type = args.transform
 
 # TODO: CHANGE "METRICS_FOR_BEST_MODEL"
 # actual training set
+if transform_type == "none":
+    output_dir="./{}/results_[{}]".format(selected_model, selected_dataset)
+else:
+    output_dir="./{}/results_[{}_{}]".format(selected_model, selected_dataset, transform_type)
+
 training_args = TrainingArguments(
-    output_dir="./{}/results_[{}]".format(selected_model, selected_dataset),
+    output_dir=output_dir,
     per_device_train_batch_size=1,
     per_device_eval_batch_size=4,
     gradient_accumulation_steps=8,
@@ -97,6 +103,17 @@ match args.transform:
         transform = transforms.Compose([
             transforms.Resize((image_size, image_size)),
             contrast_transform(contrast_factor),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=mean, std=std)
+        ])
+    
+    case "lowresolution":
+        downscale_factor = 0.25  # keep 25% of the resolution, adjust as needed
+        down_size = int(round(image_size * downscale_factor))
+
+        transform = transforms.Compose([
+            transforms.Resize((down_size, down_size)),       # downsample
+            transforms.Resize((image_size, image_size)),     # upscale back to normal size
             transforms.ToTensor(),
             transforms.Normalize(mean=mean, std=std)
         ])
