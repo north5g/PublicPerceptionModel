@@ -1,3 +1,4 @@
+from numpy import random
 from torch.utils.data import Dataset
 from sklearn.preprocessing import LabelEncoder
 from torchvision import transforms
@@ -11,26 +12,19 @@ import requests
 from os import listdir
 from tqdm import tqdm
 from os.path import isfile, join
+import numpy as np
+
+from transformations import multi_transformation
 
 class PlacePulseDataset(Dataset):
-    def __init__(self, csv_path='place-pulse-2.0/qscores.tsv', image_folder='place-pulse-2.0/images_preprocessed/', transform=None, study_type_filter="all", fraction: float = 1.0, random_state: int = 42):
+    def __init__(self, transform_data, instances = 1, csv_path='place-pulse-2.0/qscores.tsv', image_folder='place-pulse-2.0/images_preprocessed/', study_type_filter="all", fraction: float = 1.0, noise = 0, random_state: int = 42):
         """
         Args:
             csv_path (str): Path to the CSV file with 'image_path' and 'score' columns.
             image_folder (str): Directory with all the images.
             transform (callable, optional): Optional transform to be applied on a sample.
         """
-        self.df = pd.read_csv(csv_path, sep='\t')
-        if fraction < 1.0:
-            self.df = self.df.sample(frac=fraction, random_state=random_state).reset_index(drop=True)
-        self.image_folder = image_folder
-        self.transform = transform or transforms.Compose([
-            transforms.Resize((336, 336)),
-            transforms.ToTensor()
-        ])
-
-        self.df['score'] = self.df['trueskill.score'].astype(float)
-
+        base_df = pd.read_csv(csv_path, sep='\t')
         study_types = {
             '50a68a51fdc9f05596000002': 'safe',
             '50f62c41a84ea7c5fdd2e454': 'lively',
@@ -39,20 +33,59 @@ class PlacePulseDataset(Dataset):
             '50f62ccfa84ea7c5fdd2e459': 'depressing',
             '5217c351ad93a7d3e7b07a64': 'beautiful'
         }
-        self.df['study_type'] = self.df['study_id'].map(study_types)
-        if study_type_filter != "all":
-            if isinstance(study_type_filter, str):
-                study_type_filter = [study_type_filter]
-            self.df = self.df[self.df['study_type'].isin(study_type_filter)]
+        base_df['study_type'] = base_df['study_id'].map(study_types)
+        if fraction < 1.0:
+            base_df = base_df.sample(frac=fraction, random_state=random_state).reset_index(drop=True)
+        
+                
 
-            self.df['normalized_score'] = self.df.groupby('study_type')['score'].transform(
-                lambda x: (x - x.min()) / (x.max() - x.min()) * 100
-            )
-        else:
-            self.df['normalized_score'] = ((self.df['score'] - self.df['score'].min()) / (self.df['score'].max() - self.df['score'].min())) * 100
+        dataframes = []
+        self.transform_map = {}
+        available_transforms = ["none", "zoomed", "greyscale", "contrast", "lowresolution", "flipped"]
 
+        print("Available transformations: " + ", ".join(available_transforms))
+        for i in range(instances):
+            while True:
+                transforms = input(
+                    f"Setting up dataset instance {i+1}. "
+                    "What transformations do you want to apply to the dataset? (comma-separated, spaces optional)\n"
+                )
+                # Clean up input and split
+                transform_list = transforms.replace(" ", "").split(",")
+
+                # Check if all transforms are valid
+                invalid = [t for t in transform_list if t not in available_transforms]
+                if invalid:
+                    print(f"Invalid transformations: {', '.join(invalid)}. Please try again.")
+                else:
+                    self.transform_map[i] = transform_list
+                    break
+            
+        for i in range(instances):
+            
+            df = base_df.copy()
+            df["instances"] = i
+            
+            noise = 0.01 * np.random.uniform(-noise, noise, size=len(df)) + 1
+            df['score'] = df['trueskill.score'].astype(float) * noise
+
+            if study_type_filter != "all":
+                if isinstance(study_type_filter, str):
+                    study_type_filter = [study_type_filter]
+                df = df[df['study_type'].isin(study_type_filter)]
+                df['normalized_score'] = df.groupby('study_type')['score'].transform(
+                    lambda x: ((x - x.min()) / (x.max() - x.min())) * 100
+                )
+            else:
+                df['normalized_score'] = ((df['score'] - df['score'].min()) / (df['score'].max() - df['score'].min())) * 100
+            dataframes.append(df)
+
+        self.df = pd.concat(dataframes).reset_index(drop=True)
+        
+        self.image_folder = image_folder
         self.label_encoder = LabelEncoder()
         self.df['study_type_id'] = self.label_encoder.fit_transform(self.df['study_type'])
+        self.transform_data = transform_data
 
         # Filter out any missing files
         self.df = self.df[self.df['location_id'].apply(
@@ -63,11 +96,14 @@ class PlacePulseDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
+
         image_path = os.path.join(self.image_folder, f"{row['location_id']}.jpg")
         image = Image.open(image_path).convert("RGB")
-        image = self.transform(image)
-        #score = float(row['score'])  # Ensure it’s a float for regression
-        normalized_score = float(row['normalized_score'])  # Use normalized score for regression
+
+        transform = self.transform_map[row["instances"]]
+        transformation = multi_transformation(image, transform, self.transform_data)
+        image = transformation(image)
+        normalized_score = float(row['normalized_score'])
 
         return {
           'pixel_values': image,
