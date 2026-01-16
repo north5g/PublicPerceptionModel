@@ -10,24 +10,46 @@ import argparse
 from transformations import transformation, multi_transformation
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--label", type=str, required=True)
 parser.add_argument("--model_name", type=str, required=True)
 parser.add_argument("--dataset", type=str, default="all", choices=["all", "safe", "lively", "clean", "wealthy", "depressing", "beautiful"])
-parser.add_argument("--transform", type=str, default="none", choices=["none", "zoomed", "greyscale", "contrast", "lowresolution", "flipped"])
 parser.add_argument("--instances", type=int, default=1)
+parser.add_argument("--noise", type=float, default=0.0, help="Amount of noise to add to normalized scores")
+parser.add_argument(
+    "--instance_transforms",
+    type=str,
+    default=None,
+    help='Example: "none|contrast|zoomed,greyscale" (one per instance, separated by |)'
+)
 args = parser.parse_args()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+label = args.label
 selected_model = args.model_name
 selected_dataset = args.dataset
-transform_type = args.transform
 instances = args.instances
+
+transform_map = {}
+if args.instance_transforms is not None:
+    if args.instance_transforms == "interactive":
+        interactive = True
+    else:
+        interactive = False
+        instance_transform_lists = args.instance_transforms.split("|")
+
+        if len(instance_transform_lists) != instances:
+            raise ValueError("instance_transforms count must match --instances")
+
+        for i, part in enumerate(instance_transform_lists):
+            transform_map[i] = [t.strip() for t in part.split(",") if t.strip()]
 
 # TODO: CHANGE "METRICS_FOR_BEST_MODEL"
 # actual training set
-if transform_type == "none":
-    output_dir="./{}/results_trial2_[{}]".format(selected_model, selected_dataset)
+
+if instances == 1:
+    output_dir="./{}/{}_[{}]".format(selected_model, label, selected_dataset)
 else:
-    output_dir="./{}/results_trial2_[{}_{}]".format(selected_model, selected_dataset, transform_type)
+    output_dir="./{}/{}_[{}_{}]".format(selected_model, label, selected_dataset, instances)
 
 training_args = TrainingArguments(
     output_dir=output_dir,
@@ -79,10 +101,7 @@ encoder, processor, encoder_dim, image_size = load_encoder(selected_model, devic
 mean = getattr(processor, "image_mean", [0.485, 0.456, 0.406])
 std  = getattr(processor, "image_std",  [0.229, 0.224, 0.225])
 
-
-transform = transformation(transform_type, image_size, mean, std)
-
-dataset = PlacePulseDataset(transform_data = (image_size, mean, std), instances=instances, study_type_filter=selected_dataset, fraction=1.0, random_state=42)
+dataset = PlacePulseDataset(transform_data = (image_size, mean, std), instances=instances, study_type_filter=selected_dataset, fraction=1.0, noise=args.noise, transform_map=transform_map, interactive=interactive)
 train_dataset, eval_dataset, test_dataset = dataset.split()
 train_mean = train_dataset.df['normalized_score'].mean()
 train_std = train_dataset.df['normalized_score'].std()

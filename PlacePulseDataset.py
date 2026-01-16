@@ -17,7 +17,7 @@ import numpy as np
 from transformations import multi_transformation
 
 class PlacePulseDataset(Dataset):
-    def __init__(self, transform_data, instances = 1, csv_path='place-pulse-2.0/qscores.tsv', image_folder='place-pulse-2.0/images_preprocessed/', study_type_filter="all", fraction: float = 1.0, noise = 0, random_state: int = 42):
+    def __init__(self, transform_data, instances = 1, csv_path='place-pulse-2.0/qscores.tsv', image_folder='place-pulse-2.0/images_preprocessed/', study_type_filter="all", fraction: float = 1.0, noise = 0, random_state: int = 42, transform_map=None, interactive=False):
         """
         Args:
             csv_path (str): Path to the CSV file with 'image_path' and 'score' columns.
@@ -43,23 +43,48 @@ class PlacePulseDataset(Dataset):
         self.transform_map = {}
         available_transforms = ["none", "zoomed", "greyscale", "contrast", "lowresolution", "flipped"]
 
-        print("Available transformations: " + ", ".join(available_transforms))
-        for i in range(instances):
-            while True:
-                transforms = input(
-                    f"Setting up dataset instance {i+1}. "
-                    "What transformations do you want to apply to the dataset? (comma-separated, spaces optional)\n"
-                )
-                # Clean up input and split
-                transform_list = transforms.replace(" ", "").split(",")
+        def validate_list(lst):
+            invalid = [t for t in lst if t not in available_transforms]
+            if invalid:
+                raise ValueError(f"Invalid transformations: {invalid}. Allowed: {available_transforms}")
 
-                # Check if all transforms are valid
-                invalid = [t for t in transform_list if t not in available_transforms]
-                if invalid:
-                    print(f"Invalid transformations: {', '.join(invalid)}. Please try again.")
-                else:
-                    self.transform_map[i] = transform_list
-                    break
+        # Build self.transform_map
+        self.transform_map = {}
+
+        if interactive:
+            print("Available transformations: " + ", ".join(available_transforms))
+            for i in range(instances):
+                while True:
+                    s = input(
+                        f"Setting up dataset instance {i+1}. "
+                        "What transformations do you want to apply? (comma-separated)\n"
+                    )
+                    lst = [t.strip() for t in s.split(",") if t.strip()]
+                    if not lst:
+                        lst = ["none"]
+                    try:
+                        validate_list(lst)
+                        self.transform_map[i] = lst
+                        break
+                    except ValueError as e:
+                        print(e)
+
+        elif transform_map is not None:
+            # transform_map can be {0:["none"], 1:["zoomed","greyscale"], ...}
+            if len(transform_map) != instances:
+                raise ValueError(f"transform_map has {len(transform_map)} entries but instances={instances}")
+
+            for i in range(instances):
+                if i not in transform_map:
+                    raise ValueError(f"transform_map missing key {i}")
+                lst = [t.strip() for t in transform_map[i]]
+                validate_list(lst)
+                self.transform_map[i] = lst
+
+        else:
+            # Non-interactive default: all instances use none
+            for i in range(instances):
+                self.transform_map[i] = ["none"]
             
         for i in range(instances):
             
@@ -100,8 +125,8 @@ class PlacePulseDataset(Dataset):
         image_path = os.path.join(self.image_folder, f"{row['location_id']}.jpg")
         image = Image.open(image_path).convert("RGB")
 
-        transform = self.transform_map[row["instances"]]
-        transformation = multi_transformation(image, transform, self.transform_data)
+        transform_list = self.transform_map[row["instances"]]
+        transformation = multi_transformation(transform_list, self.transform_data)
         image = transformation(image)
         normalized_score = float(row['normalized_score'])
 
@@ -125,19 +150,20 @@ class PlacePulseDataset(Dataset):
         train_df, eval_df = train_test_split(self.df, test_size=eval, random_state=random_state)
         train_df, test_df = train_test_split(train_df, test_size=test, random_state=random_state)
 
-        train_dataset = PlacePulseDataset.__from_split__(train_df, self.image_folder, self.transform, self.label_encoder)
-        eval_dataset = PlacePulseDataset.__from_split__(eval_df, self.image_folder, self.transform, self.label_encoder)
-        test_dataset = PlacePulseDataset.__from_split__(test_df, self.image_folder, self.transform, self.label_encoder)
+        train_dataset = PlacePulseDataset.__from_split__(train_df, self.image_folder, self.transform_data, self.transform_map, self.label_encoder)
+        eval_dataset = PlacePulseDataset.__from_split__(eval_df, self.image_folder, self.transform_data, self.transform_map, self.label_encoder)
+        test_dataset = PlacePulseDataset.__from_split__(test_df, self.image_folder, self.transform_data, self.transform_map, self.label_encoder)
 
         return train_dataset, eval_dataset, test_dataset
 
     @classmethod
-    def __from_split__(cls, df, image_folder, transform, label_encoder):
+    def __from_split__(cls, df, image_folder, transform_data, transform_map, label_encoder):
         """Helper method to create a dataset from a split DataFrame."""
         obj = cls.__new__(cls)
         obj.df = df.reset_index(drop=True)
         obj.image_folder = image_folder
-        obj.transform = transform
+        obj.transform_data = transform_data
+        obj.transform_map = transform_map
         obj.label_encoder = label_encoder
         return obj
 
